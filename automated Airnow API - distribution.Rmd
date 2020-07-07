@@ -1,0 +1,163 @@
+---
+title: "Airnow API"
+author: "Microscone"
+date: "7/06/2020"
+output: html_document
+---
+
+## Purpose
+
+This analysis is to review the forecasts made by STI in a given month.
+
+Forecast and daily max 8-hour ozone data was retrieved from the EPA AQS API. 
+
+```{r, include = FALSE}
+library(httr)
+library(jsonlite)
+library(tidyverse)
+library(lubridate)
+library(gmodels)
+library(knitr)
+library(kableExtra)
+```
+```{r}
+#enter the number of days in the month you want to analyze here:
+#Enter the date of the first of the month that you want to analyze, in YYYY-MM-DD Format. 
+#For instance, if you want to analyze June of 2020, enter "2020-06-01"
+Month_to_analyze <- "2020-06-01"
+```
+
+
+```{r, include = FALSE}
+#We can only request the forecast for each day. Therefore, we will need to loop through all dates in a month, and append the records to a dataframe.
+
+Days_in_month_to_analyze <- days_in_month(Month_to_analyze)
+
+month_vector <- str_pad(1:Days_in_month_to_analyze, pad = 0, width = 2, "left")
+aqi_all <- data.frame()
+for (i in month_vector) {
+  API_query <- GET(paste0("http://www.airnowapi.org/aq/forecast/zipCode/?zipCode=19806&API_KEY=INSERT_API_KEY_HERE&date=2020-06-",
+                            as.character(i),
+                             "&format=application/json"))
+  AQI_df <-  as.data.frame(fromJSON(rawToChar(API_query$content)))
+  AQI_df$Category <- NULL
+  rownames(AQI_df) <- NULL
+  aqi_all <- rbind(aqi_all, AQI_df)
+}
+
+aqi_all
+
+aqi_forecast_max <- aqi_all %>% 
+  rename(c("Forecast_AQI" = AQI)) %>% 
+  mutate(Date_of_forecast = ymd(DateForecast)) %>% 
+  group_by(Date_of_forecast) %>% 
+  slice(which.max(Forecast_AQI))
+```
+
+```{r, include = FALSE}
+#Now, to acquire the actual max ozone measured at any monitor in the state for each day.
+
+#create a vector of the last day of the month:
+Month_to_analyze_end <-  ceiling_date(ymd(Month_to_analyze), unit = "month")-days(1)
+
+#create the URL for the API using the date of interest
+get_url <- paste0("http://www.airnowapi.org/aq/data/?startDate=",
+as.character(Month_to_analyze), "T00&endDate=",
+as.character(Month_to_analyze_end), "T23&parameters=OZONE&BBOX=-75.83862,38.44498,-74.98992,39.84017&dataType=A&format=application/json&verbose=0&nowcastonly=0&includerawconcentrations=1&API_KEY=INSERT_API_KEY_HERE")
+
+#API Call
+Monitorin_data_DE <- GET(url = get_url)
+
+# converting API results to DF
+Monitorin_data_DE <-  fromJSON(rawToChar(Monitorin_data_DE$content))
+Monitorin_data_DE
+
+#selecting only the max daily AQI for the month
+Monitoring_data_daily_max <- Monitorin_data_DE %>% 
+  rename(c("Actual_AQI" = AQI)) %>% 
+  mutate(Date = as.Date(Monitorin_data_DE$UTC)) %>% 
+  group_by(Date) %>% 
+  slice(which.max(Actual_AQI))
+Monitoring_data_daily_max
+```
+
+```{r, include=FALSE}
+#Now, to compare the forecast AQI to the actual max AQI
+aqi_forecast_max
+#create daily max category
+aqi_forecast_max$Forecast_Category <- case_when(
+  aqi_forecast_max$Forecast_AQI >0 & aqi_forecast_max$Forecast_AQI <51 ~ "Good",
+  aqi_forecast_max$Forecast_AQI >50 & aqi_forecast_max$Forecast_AQI <101 ~ "Moderate", 
+  aqi_forecast_max$Forecast_AQI >100 & aqi_forecast_max$Forecast_AQI < 151 ~ "Unhealthy for Sensitive Groups",
+  aqi_forecast_max$Forecast_AQI >100 ~ "Unhealthy")
+
+Monitoring_data_daily_max$Actual_Category <- case_when(
+  Monitoring_data_daily_max$Actual_AQI >0 & Monitoring_data_daily_max$Actual_AQI <51 ~ "Good",
+  Monitoring_data_daily_max$Actual_AQI >50 & Monitoring_data_daily_max$Actual_AQI <101 ~ "Moderate", 
+  Monitoring_data_daily_max$Actual_AQI >100 & Monitoring_data_daily_max$Actual_AQI <151 ~"Unhealthy for Sensitive Groups",
+  Monitoring_data_daily_max$Actual_AQI >100 ~ "Unhealthy")
+
+
+#join two datasets to make comparison
+Month_analysis <- aqi_forecast_max %>% 
+  left_join(Monitoring_data_daily_max, by = c("Date_of_forecast" = "Date")) %>% 
+  select(Date_of_forecast, Forecast_AQI, Actual_AQI, Forecast_Category, Actual_Category)
+
+#AQI_Difference column: positive will be forecast higher than Max
+Month_analysis <- Month_analysis %>% 
+  drop_na() %>% 
+  mutate("AQI_Difference" = Forecast_AQI - Actual_AQI)
+  
+```
+
+
+
+# Summary Statistics
+
+Some simple summary statistics on the difference between the forecast AQI and the actual maximum daily 8-hour ozone level AQI
+A positive "AQI_Difference" means the Forecast was higher than the daily max
+
+```{r, fig.height = 8, fig.width = 6, echo = F}
+month_summary <- summary(Month_analysis$AQI_Difference)
+month_summary
+
+
+ggplot(Month_analysis) +
+  geom_boxplot(aes(y = AQI_Difference), fill = "#6fa4c6") +
+  theme_classic() +
+  ggtitle(paste0(month(Month_to_analyze, label = T, abbr = F), " difference between Forecast \nand Daily Max", subtitle = "\nWhere positive means the forecast was \nhigher than the actual")) +
+  theme(axis.title.x=element_blank(),
+        axis.text.x=element_blank(),
+        axis.ticks.x=element_blank())
+```
+
+
+Some main points from the statistics of the difference:
+
+- The mean bias of the forecast is `r month_summary[[4]]`, meaning the forecast is, on average, ~5 AQI points higher than the actual max. 
+- The forecast range is from `r abs(month_summary[[1]])` AQI points below the actual to `r abs(month_summary[[6]])` points above the actual. 
+
+
+# Contingency Table
+
+Below is a contingency table, showing the AQI categories of forecast vs actual. The top box defines what each number is. 
+
+```{r, echo=FALSE}
+# 2-Way Cross Tabulation
+Monthly_analysis_crosstable <- CrossTable(Month_analysis$Actual_Category, Month_analysis$Forecast_Category)
+```
+
+
+Some takeaways from the cross tabulation:
+
+- When the forecast is moderate, `r round(Monthly_analysis_crosstable[[3]][4], 2)`% of the the time the actual AQI value is moderate also.  
+- When the forecast is good, `r round(Monthly_analysis_crosstable[[3]][1], 2)`% of the time the actual AQI is good. 
+
+
+# Full Dataset
+```{r, echo=FALSE}
+Month_analysis %>% 
+   kable() %>% 
+   kable_styling()
+```
+
