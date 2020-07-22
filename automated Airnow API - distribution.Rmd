@@ -20,23 +20,24 @@ library(gmodels)
 library(knitr)
 library(kableExtra)
 ```
+
 ```{r}
 #enter the number of days in the month you want to analyze here:
 #Enter the date of the first of the month that you want to analyze, in YYYY-MM-DD Format. 
 #For instance, if you want to analyze June of 2020, enter "2020-06-01"
-Month_to_analyze <- "2020-06-01"
+Month_to_analyze <- "2020-07-01"
 ```
 
 
 ```{r, include = FALSE}
 #We can only request the forecast for each day. Therefore, we will need to loop through all dates in a month, and append the records to a dataframe.
 
-Days_in_month_to_analyze <- days_in_month(Month_to_analyze)
+Days_in_month_to_analyze <- days_in_month(as_date(Month_to_analyze))
 
 month_vector <- str_pad(1:Days_in_month_to_analyze, pad = 0, width = 2, "left")
 aqi_all <- data.frame()
 for (i in month_vector) {
-  API_query <- GET(paste0("http://www.airnowapi.org/aq/forecast/zipCode/?zipCode=19806&API_KEY=INSERT_API_KEY_HERE&date=2020-06-",
+  API_query <- GET(paste0("http://www.airnowapi.org/aq/forecast/zipCode/?zipCode=19806&API_KEY=428E6635-36C1-4DA8-A90A-ED982938204A&date=2020-07-",
                             as.character(i),
                              "&format=application/json"))
   AQI_df <-  as.data.frame(fromJSON(rawToChar(API_query$content)))
@@ -63,21 +64,24 @@ Month_to_analyze_end <-  ceiling_date(ymd(Month_to_analyze), unit = "month")-day
 #create the URL for the API using the date of interest
 get_url <- paste0("http://www.airnowapi.org/aq/data/?startDate=",
 as.character(Month_to_analyze), "T00&endDate=",
-as.character(Month_to_analyze_end), "T23&parameters=OZONE&BBOX=-75.83862,38.44498,-74.98992,39.84017&dataType=A&format=application/json&verbose=0&nowcastonly=0&includerawconcentrations=1&API_KEY=INSERT_API_KEY_HERE")
+as.character(Month_to_analyze_end), "T23&parameters=OZONE&verbose=1&BBOX=-75.83862,38.44498,-74.98992,39.84017&dataType=B&format=application/json&verbose=0&nowcastonly=0&includerawconcentrations=1&API_KEY=428E6635-36C1-4DA8-A90A-ED982938204A")
 
 #API Call
-Monitorin_data_DE <- GET(url = get_url)
+Monitorin_data_DE_raw <- GET(url = get_url)
 
 # converting API results to DF
-Monitorin_data_DE <-  fromJSON(rawToChar(Monitorin_data_DE$content))
+Monitorin_data_DE <-  fromJSON(rawToChar(Monitorin_data_DE_raw$content))
 Monitorin_data_DE
 
 #selecting only the max daily AQI for the month
 Monitoring_data_daily_max <- Monitorin_data_DE %>% 
-  rename(c("Actual_AQI" = AQI)) %>% 
-  mutate(Date = as.Date(Monitorin_data_DE$UTC)) %>% 
+  filter(AgencyName == "Delaware Dept. of Natural Resources and Environment") %>% rename(c("Actual_AQI" = AQI)) %>% 
+  mutate(Date = as.Date(UTC)) %>% 
   group_by(Date) %>% 
-  slice(which.max(Actual_AQI))
+  arrange(desc(Actual_AQI)) %>% 
+  slice(1) %>% 
+  ungroup() 
+
 Monitoring_data_daily_max
 ```
 
