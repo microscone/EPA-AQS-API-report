@@ -65,7 +65,7 @@ Month_to_analyze_end <-  ceiling_date(ymd(Month_to_analyze), unit = "month")-day
 #create the URL for the API using the date of interest
 get_url <- paste0("http://www.airnowapi.org/aq/data/?startDate=",
 as.character(Month_to_analyze), "T00&endDate=",
-as.character(Month_to_analyze_end), "T23&parameters=OZONE&verbose=1&BBOX=-75.83862,38.44498,-74.98992,39.84017&dataType=B&format=application/json&verbose=0&nowcastonly=0&includerawconcentrations=1&API_KEY=428E6635-36C1-4DA8-A90A-ED982938204A")
+as.character(Month_to_analyze_end), "T23&parameters=OZONE&verbose=1&BBOX=-75.83862,38.44498,-74.98992,39.84017&dataType=B&format=application/json&nowcastonly=0&includerawconcentrations=1&API_KEY=428E6635-36C1-4DA8-A90A-ED982938204A")
 
 #API Call
 Monitorin_data_DE_raw <- GET(url = get_url)
@@ -76,8 +76,11 @@ Monitorin_data_DE
 
 #selecting only the max daily AQI for the month
 Monitoring_data_daily_max <- Monitorin_data_DE %>% 
-  filter(AgencyName == "Delaware Dept. of Natural Resources and Environment") %>% rename(c("Actual_AQI" = AQI)) %>% 
+  filter(AgencyName == "Delaware Dept. of Natural Resources and Environment") %>% rename(c("Actual_AQI" = AQI), c("8-hr Average" = Value)) %>%
+  mutate(Time_int = hour(ymd_hm(UTC))) %>% 
   mutate(Date = as.Date(UTC)) %>% 
+  filter(!Time_int %in% c(5:11)) %>% 
+  select(-Time_int) %>% 
   group_by(Date) %>% 
   arrange(desc(Actual_AQI)) %>% 
   slice(1) %>% 
