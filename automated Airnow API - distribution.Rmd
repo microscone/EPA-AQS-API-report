@@ -73,6 +73,7 @@ get_url <- paste0("http://www.airnowapi.org/aq/data/?startDate=",
   #"428E6635-36C1-4DA8-A90A-ED982938204A") #SHANE API KEY
   "0269BB74-0C96-4CA8-A479-9FDA840A7A5E") #MARK API KEY
 
+
 #API Call
 Monitorin_data_raw <- GET(url = get_url)
 
@@ -85,8 +86,12 @@ Monitorin_data_DE <- Monitorin_data %>%
 
 #selecting only the max daily AQI for the month
 Monitoring_data_daily_max <- Monitorin_data_DE %>% 
-  rename(c("Actual_AQI" = AQI)) %>% 
+
+  rename(c("Actual_AQI" = AQI), c("8-hr Average" = Value)) %>%
+  mutate(Time_int = hour(ymd_hm(UTC))) %>% 
   mutate(Date = as.Date(UTC)) %>% 
+  filter(!Time_int %in% c(5:11)) %>% 
+  select(-Time_int) %>% 
   group_by(Date) %>% 
   arrange(desc(Actual_AQI)) %>% 
   slice(1) %>% 
