@@ -19,6 +19,7 @@ library(lubridate)
 library(gmodels)
 library(knitr)
 library(kableExtra)
+library(openair)
 ```
 
 ```{r}
@@ -26,7 +27,6 @@ library(kableExtra)
 #Enter the date of the first of the month that you want to analyze, in YYYY-MM-DD Format. 
 #For instance, if you want to analyze June of 2020, enter "2020-06-01"
 Month_to_analyze <- "2020-07-01"
-print("hello")
 ```
 
 
@@ -38,7 +38,10 @@ Days_in_month_to_analyze <- days_in_month(as_date(Month_to_analyze))
 month_vector <- str_pad(1:Days_in_month_to_analyze, pad = 0, width = 2, "left")
 aqi_all <- data.frame()
 for (i in month_vector) {
-  API_query <- GET(paste0("http://www.airnowapi.org/aq/forecast/zipCode/?zipCode=19806&API_KEY=428E6635-36C1-4DA8-A90A-ED982938204A&date=2020-07-",
+  API_query <- GET(paste0("http://www.airnowapi.org/aq/forecast/zipCode/?zipCode=19806&API_KEY=",
+                          #"428E6635-36C1-4DA8-A90A-ED982938204A", #SHANE API KEY
+                          "0269BB74-0C96-4CA8-A479-9FDA840A7A5E", #MARK API KEY
+                          "&date=2020-07-",
                             as.character(i),
                              "&format=application/json"))
   AQI_df <-  as.data.frame(fromJSON(rawToChar(API_query$content)))
@@ -64,19 +67,27 @@ Month_to_analyze_end <-  ceiling_date(ymd(Month_to_analyze), unit = "month")-day
 
 #create the URL for the API using the date of interest
 get_url <- paste0("http://www.airnowapi.org/aq/data/?startDate=",
-as.character(Month_to_analyze), "T00&endDate=",
-as.character(Month_to_analyze_end), "T23&parameters=OZONE&verbose=1&BBOX=-75.83862,38.44498,-74.98992,39.84017&dataType=B&format=application/json&nowcastonly=0&includerawconcentrations=1&API_KEY=428E6635-36C1-4DA8-A90A-ED982938204A")
+  as.character(Month_to_analyze), "T00&endDate=",
+  as.character(Month_to_analyze_end), "T23&parameters=OZONE&verbose=1&BBOX=-75.83862,38.44498,-74.98992,39.84017&dataType=B&",
+  "format=application/json&verbose=0&nowcastonly=0&includerawconcentrations=1&API_KEY=",
+  #"428E6635-36C1-4DA8-A90A-ED982938204A") #SHANE API KEY
+  "0269BB74-0C96-4CA8-A479-9FDA840A7A5E") #MARK API KEY
+
 
 #API Call
-Monitorin_data_DE_raw <- GET(url = get_url)
+Monitorin_data_raw <- GET(url = get_url)
 
 # converting API results to DF
-Monitorin_data_DE <-  fromJSON(rawToChar(Monitorin_data_DE_raw$content))
-Monitorin_data_DE
+Monitorin_data <-  fromJSON(rawToChar(Monitorin_data_raw$content))
+Monitorin_data
+
+Monitorin_data_DE <- Monitorin_data %>% 
+  filter(AgencyName == "Delaware Dept. of Natural Resources and Environment")
 
 #selecting only the max daily AQI for the month
 Monitoring_data_daily_max <- Monitorin_data_DE %>% 
-  filter(AgencyName == "Delaware Dept. of Natural Resources and Environment") %>% rename(c("Actual_AQI" = AQI), c("8-hr Average" = Value)) %>%
+
+  rename(c("Actual_AQI" = AQI), c("8-hr Average" = Value)) %>%
   mutate(Time_int = hour(ymd_hm(UTC))) %>% 
   mutate(Date = as.Date(UTC)) %>% 
   filter(!Time_int %in% c(5:11)) %>% 
@@ -87,6 +98,58 @@ Monitoring_data_daily_max <- Monitorin_data_DE %>%
   ungroup() 
 
 Monitoring_data_daily_max
+```
+
+```{r, include = FALSE}
+DE_Sites <- Monitorin_data_DE %>%
+  group_by(SiteName) %>%
+  slice(1) %>%
+  select(SiteName,Latitude,Longitude)
+
+#install.packages("leaflet")
+library(leaflet)
+library(maps)
+library(rgdal)
+library(geojsonio)
+library(shiny)
+library(htmlwidgets)
+
+# reading GeoJSON file for DE county boundaries as an "sp" object
+deCounties <- geojson_read("DE_counties_4326.geojson", what = "sp")
+
+# The Leaflet map widget is set to a variable "map".
+# Layers are defined for use with an interactive layer display.
+map <- leaflet(DE_Sites) %>% 
+  
+  # the zoom and center is set
+  setView(-75.519650, 39.157416, zoom = 8) %>%
+  
+  #a third-party basemap is added
+  addProviderTiles(providers$CartoDB.Positron) %>%
+
+  # a polygon layer is added from the DE counties sp object and its outline color and opacity are set
+  addPolygons(data=deCounties,
+              col = 'red',
+              fillOpacity = 0) %>%
+  
+  addCircleMarkers(~Longitude,
+                   ~Latitude,
+                   popup = ~as.character(SiteName),
+                   label = ~as.character(SiteName),
+                   radius = 5,
+                   stroke = FALSE, fillOpacity = 0.75)
+
+
+
+```
+
+# Map of Delaware Ozone Monitors
+
+This map shows the location of each of Delaware's ozone monitors.
+
+```{r}
+# the map variable is called which creates the web map widget
+map 
 ```
 
 ```{r, include=FALSE}
@@ -116,9 +179,31 @@ Month_analysis <- Month_analysis %>%
   drop_na() %>% 
   mutate("AQI_Difference" = Forecast_AQI - Actual_AQI)
   
+Month_analysis$date <- Month_analysis$Date_of_forecast
+
+Actual_AQI_Plot <- calendarPlot(Month_analysis, pollutant ='Actual_AQI',  statistic = "max", breaks = c(0, 50, 100, 150, 200),
+                                labels = c("Good", "Moderate", "Unhealthy for Sensitive Groups", "Unhealthy"),
+                                cols = c("green", "yellow", "orange", "red"), w.shift = 1, 
+                                key.header = "Observations - Air Quality Index")
+
+Forecast_AQI_Plot <- calendarPlot(Month_analysis, pollutant ='Forecast_AQI',  statistic = "max", breaks = c(0, 50, 100, 150, 200),
+                                labels = c("Good", "Moderate", "Unhealthy for Sensitive Groups", "Unhealthy"),
+                                cols = c("green", "yellow", "orange", "red"), w.shift = 1, 
+                                key.header = "Forecast - Air Quality Index")
+
+
 ```
 
 
+# Calendar Plots
+
+Below are calendar plots showing the forecast and actual Air Quality Index categories for each month in the state.
+
+```{r, echo=FALSE}
+Forecast_AQI_Plot
+Actual_AQI_Plot
+
+```
 
 # Summary Statistics
 
