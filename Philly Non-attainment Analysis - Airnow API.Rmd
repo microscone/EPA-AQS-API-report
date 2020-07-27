@@ -20,6 +20,7 @@ library(knitr)
 library(kableExtra)
 library(leaflet)
 library(geojsonio)
+library(data.table)
 ```
 
 ```{r}
@@ -53,56 +54,77 @@ airnowtech_files <- "https://s3-us-west-1.amazonaws.com//files.airnowtech.org/ai
 #name used for daily data files from airnow, which list the max concentrations for pollutants at each monitor each day
 fileName <- "daily_data_v2.dat"
 
-#----------
-#ALTHOUGH NOT USED, THIS SECTION DOWNLOADS ALL DAT FILES TO A FOLDER, AS OPPOSED TO OPENING IN A DATA FRAME 
-# #creates a default folder on the computer
-# airnow_folder <- "c:/airnow/"
-# 
-# #creates a subfolder
-# ifelse(!dir.exists(file.path(airnow_folder,Year_to_analyze)), dir.create(file.path(airnow_folder,Year_to_analyze)), FALSE)
-# 
-# #creates a variable for the path of the subfolder
-# YOC_folder <- paste0(airnow_folder,Year_to_analyze,sep = "/")
-# 
-# #new subfolder name
-# dat_folder_name <- "Daily_Data_Files"
-# 
-# #creates another subfolder
-# ifelse(!dir.exists(file.path(YOC_folder,dat_folder_name)), dir.create(file.path(YOC_folder,dat_folder_name)), FALSE)
-# 
-# #another variable for the path of the final folder
-# dat_folder <- paste0(YOC_folder,dat_folder_name,sep = "/")
-# 
-# #downloads the daily dat files for the selected year for the ozone season and places them in the download folder created.
-# for (i in day_list){
-#   temp_url <- paste0(airnowtech_files,Year_to_analyze,"/",i,"/",fileName)
-#   destination_file <- paste0(dat_folder,i,fileName)
-#   download.file(temp_url,destination_file)
-# }
-#---------
+#creates a default folder on the computer
+airnow_folder <- "c:/airnow/"
+
+#creates a subfolder
+ifelse(!dir.exists(file.path(airnow_folder,Year_to_analyze)), dir.create(file.path(airnow_folder,Year_to_analyze)), FALSE)
+
+#creates a variable for the path of the subfolder
+YOC_folder <- paste0(airnow_folder,Year_to_analyze,sep = "/")
+
+#new subfolder name
+dat_folder_name <- "Daily_Data_Files"
+
+#creates another subfolder
+ifelse(!dir.exists(file.path(YOC_folder,dat_folder_name)), dir.create(file.path(YOC_folder,dat_folder_name)), FALSE)
+
+#another variable for the path of the final folder
+dat_folder <- paste0(YOC_folder,dat_folder_name,sep = "/")
+
+#downloads the daily dat files for the selected year for the ozone season and places them in the download folder created.
+for (i in day_list){
+  destination_file <- paste0(dat_folder,i,fileName)
+  #only downloads new files which have not already been downloaded
+  if(!file.exists(destination_file)){
+    temp_url <- paste0(airnowtech_files,Year_to_analyze,"/",i,"/",fileName)
+    download.file(temp_url,destination_file)
+  }
+}
+
+```
+
+
+```{r, include = FALSE}
+
+#list of dat files in folder
+file_list <- list.files(dat_folder)
 
 #empty data frame
-df_total = data.frame()
+dataset <- data.frame()
 
-#loop to read the dat files for the selected days and copy into the empty data frame
-for (i in day_list){
-  temp_url <- paste0(airnowtech_files,Year_to_analyze,"/",i,"/",fileName)
-  data <- read.delim(temp_url, header = FALSE, sep="|", skip=2, as.is=TRUE)
-  df_total <- rbind(df_total,data)
+#read and bind all dat files into the empty data frame
+for (i in 1:length(file_list)){
+  setwd(dat_folder)
+  temp_data <- fread(file_list[i], sep = "|", header = F,  stringsAsFactors = F) 
+  dataset <- rbindlist(list(dataset, temp_data), use.names = T) 
 }
+
+#----------
+#ALTHOUGH NOT USED, THIS SECTION READS ALL DAT FILES DIRECTLY INTO A DATA FRAME, AS OPPOSED TO DOWNLOADING THEM 
+# #empty data frame
+# df_total = data.frame()
+# 
+# #loop to read the dat files for the selected days and copy into the empty data frame
+# for (i in day_list){
+#   temp_url <- paste0(airnowtech_files,Year_to_analyze,"/",i,"/",fileName)
+#   data <- read.delim(temp_url, header = FALSE, sep="|", skip=2, as.is=TRUE)
+#   df_total <- rbind(df_total,data)
+# }
+#----------
 
 #list of names for the header of the data frame
 headers <- c("Date","Monitor_ID","SiteName","Param_Name","Units","Value","Averaging_Period","Data_Source",
             "AQI_Value","AQI_Category","Latitude","Longitude","AQSID")
 
 #renaming header of data frame
-colnames(df_total) <- headers
+colnames(dataset) <- headers
 
 #copying data frame to a new working data frame
-AQ2020 <- df_total
+AQ2020 <- dataset
 
 #converting Date field from a character to a date.
-AQ2020$Date <- as.Date(AQ2020$Date)
+AQ2020$POSIX.Date <- as.POSIXct(paste0(AQ2020$Date,"20"), format = '%m/%d/%Y')
 
 #philly NAA monitors: 
 Philly_monitors <- as.character(c(100031007,
@@ -140,13 +162,16 @@ PhillyNAA_4_highest <- AQ2020 %>%
   rename(c("Actual_AQI" = AQI_Value), c("Avg_8hr" = Value)) %>%
   group_by(SiteName) %>% 
   arrange(desc(Actual_AQI)) %>% 
-  slice(1:4) 
+  slice(1:4)
   
+
+Number_of_exceedances <- PhillyNAA_daily_max %>% 
+    filter(Actual_AQI > 100)
+
 ```
 
 
-
-```{r, include = FALSE}
+```{r, echo=FALSE}
 #creating a unique list of monitors in Philly NAA and their coordinates
 NAA_Sites <- PhillyNAA_daily_max %>%
   group_by(SiteName) %>%
@@ -178,6 +203,86 @@ map <- leaflet(NAA_Sites) %>%
 
 #the map object is called, to create the leaflet map.
 map
+```
+
+
+```{r, include = FALSE}
+
+require(readxl)
+
+#url of official ozone design values for 2019
+ozoneDV2019_file <- "https://www.epa.gov/sites/production/files/2020-05/o3_designvalues_2017_2019_final_05_26_20.xlsx"
+
+#temporary location for downloading file
+temp_excel <- tempfile(fileext = ".xlsx")
+
+#downloads the excel file to the temporary location
+download.file(ozoneDV2019_file,destfile = temp_excel, mode = 'wb')
+
+#reads the temporary excel file into a data frame
+ozoneDV2019 <- read_excel(temp_excel, "Table5. Site Status", skip = 3, col_names = T)
+
+#shortened list of header names
+headersDVfile <- c("State","County","CBSA","CSA","NAA_Name","EPA_Region","Monitor_ID","SiteName","SiteAddress",
+                   "Latitude","Longitude","Valid_17_19_DV","Invalid_17_19_DV","Avg_17_19_Completeness","Completeness_2017",
+                   "Completeness_2018","Completeness_2019","2017_4thMax","2018_4thMax","2019_4thMax","2017_Exceedance_Days",
+                   "2018_Exceedance_Days","2019_Exceedance_Days")
+
+#applying header names to data frame
+colnames(ozoneDV2019) <- headersDVfile
+
+#determining the 4th highest 8hr ozone value at each monitor in the Philly NAA
+PhillyNAA_4thMax <-  as.data.table(PhillyNAA_4_highest %>% 
+  mutate(Avg_8hr_ppm = Avg_8hr/1000) %>%
+  group_by(Monitor_ID) %>% 
+  arrange(desc(Avg_8hr)) %>% 
+  slice(4)) %>%
+  select(SiteName,Monitor_ID,Avg_8hr_ppm)
+
+#filters the 2019 DV data for the Philly monitors, joins the 2020 4th Max value to the table
+PhillyNAA_2020DV <- ozoneDV2019 %>%
+  filter(Monitor_ID %in% Philly_monitors) %>%
+  select(State,County,Monitor_ID,Latitude,Longitude,`2018_4thMax`,`2019_4thMax`) %>%
+  left_join(.,PhillyNAA_4thMax, by = "Monitor_ID", keep = F) %>%
+  rename("2020_4thMax" = "Avg_8hr_ppm")
+
+#calculates the draft 2018-2020 design value for ozone for the monitors in the Philly NAA
+PhillyNAA_2020DV$Draft_DV_18_20 <- apply(PhillyNAA_2020DV[,c(6,7,9)], 1, function(x) trunc(mean(x)*1000)/1000)
+  
+
+```
+
+
+```{r, echo=FALSE}
+
+#bins the draft design value data, above and below the 0.070ppm ozone NAAQS
+PhillyNAA_2020DV$O3_NAAQS_Attainment <- cut(PhillyNAA_2020DV$Draft_DV_18_20,c(0,0.07,0.150), include.lowest = T,labels = c('Attaining','Exceeding'))
+
+#color pallette is set
+monitorCol <- colorFactor(c("green", "red"), domain = c("Attaining", "Exceeding"))
+
+# The Leaflet map widget is set to a variable "map".
+# Layers are defined for use with an interactive layer display.
+mapDV <- leaflet(PhillyNAA_2020DV) %>% 
+  
+  #a third-party basemap is added
+  addProviderTiles(providers$CartoDB.Positron) %>%
+
+  # a polygon layer is added from the Philly NAA counties sp object and its outline color and opacity are set
+  addPolygons(data=Philly_NAA_Counties,
+              col = 'blue',
+              fillOpacity = 0) %>%
+  
+  # add circle markers for the monitors
+  addCircleMarkers(~Longitude,
+                   ~Latitude,
+                   label = ~as.character(paste0(SiteName, " ", Draft_DV_18_20)),
+                   color = ~monitorCol(O3_NAAQS_Attainment),
+                   radius = 5,
+                   stroke = TRUE, fillOpacity = 1)
+
+#the map object is called, to create the leaflet map.
+mapDV
 ```
 
 
