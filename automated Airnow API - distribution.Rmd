@@ -39,8 +39,8 @@ month_vector <- str_pad(1:Days_in_month_to_analyze, pad = 0, width = 2, "left")
 aqi_all <- data.frame()
 for (i in month_vector) {
   API_query <- GET(paste0("http://www.airnowapi.org/aq/forecast/zipCode/?zipCode=19806&API_KEY=",
-                          #"428E6635-36C1-4DA8-A90A-ED982938204A", #SHANE API KEY
-                          "0269BB74-0C96-4CA8-A479-9FDA840A7A5E", #MARK API KEY
+                          "428E6635-36C1-4DA8-A90A-ED982938204A", #SHANE API KEY
+                          #"0269BB74-0C96-4CA8-A479-9FDA840A7A5E", #MARK API KEY
                           "&date=2020-07-",
                             as.character(i),
                              "&format=application/json"))
@@ -70,8 +70,8 @@ get_url <- paste0("http://www.airnowapi.org/aq/data/?startDate=",
   as.character(Month_to_analyze), "T00&endDate=",
   as.character(Month_to_analyze_end), "T23&parameters=OZONE&verbose=1&BBOX=-75.83862,38.44498,-74.98992,39.84017&dataType=B&",
   "format=application/json&verbose=0&nowcastonly=0&includerawconcentrations=1&API_KEY=",
-  #"428E6635-36C1-4DA8-A90A-ED982938204A") #SHANE API KEY
-  "0269BB74-0C96-4CA8-A479-9FDA840A7A5E") #MARK API KEY
+  "428E6635-36C1-4DA8-A90A-ED982938204A") #SHANE API KEY
+  #"0269BB74-0C96-4CA8-A479-9FDA840A7A5E") #MARK API KEY
 
 
 #API Call
@@ -199,7 +199,7 @@ Forecast_AQI_Plot <- calendarPlot(Month_analysis, pollutant ='Forecast_AQI',  st
 
 Below are calendar plots showing the forecast and actual Air Quality Index categories for each month in the state.
 
-```{r, echo=FALSE}
+```{r, echo=FALSE, message=FALSE}
 Forecast_AQI_Plot
 Actual_AQI_Plot
 
@@ -227,7 +227,7 @@ ggplot(Month_analysis) +
 
 Some main points from the statistics of the difference:
 
-- The mean bias of the forecast is `r month_summary[[4]]`, meaning the forecast is, on average, ~5 AQI points higher than the actual max. 
+- The mean bias of the forecast is `r round(month_summary[[4]], 3)`, meaning the forecast is, on average, ~`r round(month_summary[[4]], 1)` AQI points higher than the actual max. 
 - The forecast range is from `r abs(month_summary[[1]])` AQI points below the actual to `r abs(month_summary[[6]])` points above the actual. 
 
 
@@ -244,7 +244,7 @@ Monthly_analysis_crosstable <- CrossTable(Month_analysis$Actual_Category, Month_
 Some takeaways from the cross tabulation:
 
 - When the forecast is moderate, `r round(Monthly_analysis_crosstable[[3]][4], 2)`% of the the time the actual AQI value is moderate also.  
-- When the forecast is good, `r round(Monthly_analysis_crosstable[[3]][1], 2)`% of the time the actual AQI is good. 
+- When the forecast is good, `r ifelse(Monthly_analysis_crosstable[[3]][1]==1, "100", round(Monthly_analysis_crosstable[[3]][1], 2))`% of the time the actual AQI is good. 
 
 
 # Full Dataset
