@@ -61,7 +61,7 @@ airnow_folder <- "c:/airnow/"
 ifelse(!dir.exists(file.path(airnow_folder,Year_to_analyze)), dir.create(file.path(airnow_folder,Year_to_analyze)), FALSE)
 
 #creates a variable for the path of the subfolder
-YOC_folder <- paste0(airnow_folder,Year_to_analyze,sep = "/")
+YOC_folder <- paste(airnow_folder,Year_to_analyze,sep = "/")
 
 #new subfolder name
 dat_folder_name <- "Daily_Data_Files"
@@ -70,11 +70,11 @@ dat_folder_name <- "Daily_Data_Files"
 ifelse(!dir.exists(file.path(YOC_folder,dat_folder_name)), dir.create(file.path(YOC_folder,dat_folder_name)), FALSE)
 
 #another variable for the path of the final folder
-dat_folder <- paste0(YOC_folder,dat_folder_name,sep = "/")
+dat_folder <- paste(YOC_folder,dat_folder_name,sep = "/")
 
 #downloads the daily dat files for the selected year for the ozone season and places them in the download folder created.
 for (i in day_list){
-  destination_file <- paste0(dat_folder,i,fileName)
+  destination_file <- paste(dat_folder,"/", i, fileName, sep = "")
   #only downloads new files which have not already been downloaded
   if(!file.exists(destination_file)){
     temp_url <- paste0(airnowtech_files,Year_to_analyze,"/",i,"/",fileName)
@@ -287,63 +287,64 @@ mapDV
 
 
 ```{r, include = FALSE}
-#Now, to acquire the actual max ozone measured at any monitor in the state for each day.
-
-# #create a vector of the last day of the month:
-# Month_to_analyze_end <-  ceiling_date(ymd(Month_to_analyze), unit = "month")-days(1)
-
-Date_Today <- Sys.Date()
-
-#create the URL for the API using the date of interest
-get_url <- paste0("http://www.airnowapi.org/aq/data/?startDate=2020-05-01T00&endDate=",Date_Today,"T23&parameters=OZONE&verbose=1&BBOX=-75.95,39.3,-74.3,40.38&dataType=B&format=application/json&nowcastonly=0&includerawconcentrations=1&API_KEY=",
-#"428E6635-36C1-4DA8-A90A-ED982938204A") #SHANE API KEY
-"0269BB74-0C96-4CA8-A479-9FDA840A7A5E") #MARK API KEY
-
-#API Call
-Monitorin_data_raw <- GET(url = get_url)
-
-# converting API results to DF
-Monitorin_data_PA <-  fromJSON(rawToChar(Monitorin_data_raw$content))
-Monitorin_data_PA
-
-
-#philly NAA monitors: 
-Philly_monitors <- c(100031007,
-100031010,
-100031013,
-100032004,
-240150003,
-340010006,
-340070002,
-340071001,
-340110007,
-340150002,
-340210005,
-340219991,
-340290006,
-420170012,
-420290100,
-420450002,
-420910013,
-421010004,
-421010024,
-421010048)
-
-#selecting only the max daily AQI for the month
-Monitoring_data_PA_daily_max <- Monitorin_data_PA %>% 
-  filter(FullAQSCode %in% Philly_monitors) %>% 
-  rename(c("Actual_AQI" = AQI), c("8-hr Average" = Value)) %>%
-  mutate(Time_int = hour(ymd_hm(UTC))) %>% 
-  mutate(Date = as.Date(UTC)) %>% 
-  filter(!Time_int %in% c(5:11)) %>% 
-  select(-Time_int) %>% 
-  group_by(Date) %>% 
-  arrange(desc(Actual_AQI)) %>% 
-  slice(1) %>% 
-  ungroup() 
-
-Monitoring_data_PA_daily_max
-
-Number_of_exceedances <- Monitoring_data_PA_daily_max %>% 
-    filter(Actual_AQI > 100)
+# #Now, to acquire the actual max ozone measured at any monitor in the state for each day.
+# 
+# # #create a vector of the last day of the month:
+# # Month_to_analyze_end <-  ceiling_date(ymd(Month_to_analyze), unit = "month")-days(1)
+# 
+# Date_Today <- Sys.Date()
+# 
+# #create the URL for the API using the date of interest
+# get_url <- paste0("http://www.airnowapi.org/aq/data/?startDate=2020-05-01T00&endDate=",Date_Today,"T23&parameters=OZONE&verbose=1&BBOX=-75.95,39.3,-74.3,40.38&dataType=B&format=application/json&nowcastonly=0&includerawconcentrations=1&API_KEY=",
+# #"428E6635-36C1-4DA8-A90A-ED982938204A") #SHANE API KEY
+# "0269BB74-0C96-4CA8-A479-9FDA840A7A5E") #MARK API KEY
+# 
+# 
+# #API Call
+# Monitorin_data_raw <- GET(url = get_url)
+# 
+# # converting API results to DF
+# Monitorin_data_PA <-  fromJSON(rawToChar(Monitorin_data_raw$content))
+# Monitorin_data_PA
+# 
+# 
+# #philly NAA monitors: 
+# Philly_monitors <- c(100031007,
+# 100031010,
+# 100031013,
+# 100032004,
+# 240150003,
+# 340010006,
+# 340070002,
+# 340071001,
+# 340110007,
+# 340150002,
+# 340210005,
+# 340219991,
+# 340290006,
+# 420170012,
+# 420290100,
+# 420450002,
+# 420910013,
+# 421010004,
+# 421010024,
+# 421010048)
+# 
+# #selecting only the max daily AQI for the month
+# Monitoring_data_PA_daily_max <- Monitorin_data_PA %>% 
+#   filter(FullAQSCode %in% Philly_monitors) %>% 
+#   rename(c("Actual_AQI" = AQI), c("8-hr Average" = Value)) %>%
+#   mutate(Time_int = hour(ymd_hm(UTC))) %>% 
+#   mutate(Date = as.Date(UTC)) %>% 
+#   filter(!Time_int %in% c(5:11)) %>% 
+#   select(-Time_int) %>% 
+#   group_by(Date) %>% 
+#   arrange(desc(Actual_AQI)) %>% 
+#   slice(1) %>% 
+#   ungroup() 
+# 
+# Monitoring_data_PA_daily_max
+# 
+# Number_of_exceedances <- Monitoring_data_PA_daily_max %>% 
+#     filter(Actual_AQI > 100)
 ```
