@@ -252,6 +252,9 @@ PhillyNAA_2020DV$Draft_DV_18_20 <- apply(PhillyNAA_2020DV[,c(6,7,9)], 1, functio
 
 ```
 
+# Map of Design values
+
+This map displays the draft 2018-2020 design values for each monitor in the Philly NAA.
 
 ```{r, echo=FALSE}
 
