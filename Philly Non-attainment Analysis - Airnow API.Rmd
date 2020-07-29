@@ -169,7 +169,9 @@ Number_of_exceedances <- PhillyNAA_daily_max %>%
     filter(Actual_AQI > 100)
 
 ```
+# Philly NAA monitors
 
+This map displays the Philly NAA monitors. Hover over a monitor to view its name.
 
 ```{r, echo=FALSE}
 #creating a unique list of monitors in Philly NAA and their coordinates
