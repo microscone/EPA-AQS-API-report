@@ -183,7 +183,7 @@ US_2020DV <- ozoneDV2019 %>%
   
 
 #calculates the draft 2018-2020 design value for ozone for the monitors in the Philly NAA
-US_2020DV$Draft_DV_18_20 <- apply(US_2020DV[,c(6,7,9)], 1, function(x) trunc(mean(x)*1000)/1000)
+US_2020DV$Draft_DV_18_20 <- apply(US_2020DV[,c(6,7,9)], 1, function(x) trunc(mean(x)*1000))
 
 US_2020DV <- US_2020DV %>%
  filter(!is.na(Draft_DV_18_20))
