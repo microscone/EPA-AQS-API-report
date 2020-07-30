@@ -33,8 +33,8 @@ Year_to_analyze <- "2020"
 #converts the year to a date at the start of the ozone season
 ozone_start_date <- as.Date(paste0(Year_to_analyze,"-05-01"))
 
-#gets the date of "today"
-Date_Today <- Sys.Date()
+#gets the date of "today", which is actually for "yesterday" to ensure that the analysis is current UP TO the current day.
+Date_Today <- Sys.Date()-1
 
 #converts the date of "today" to a character value without dashes
 Today_characters <- paste0(substr(Date_Today,6,7),substr(Date_Today,9,10))
@@ -67,6 +67,7 @@ ifelse(!dir.exists(file.path(YOC_folder,dat_folder_name)), dir.create(file.path(
 #another variable for the path of the final folder
 dat_folder <- paste0(YOC_folder,dat_folder_name,sep = "/")
 
+system.time(
 #downloads the daily dat files for the selected year for the ozone season and places them in the download folder created.
 for (i in day_list){
   destination_file <- paste0(dat_folder,i,fileName)
@@ -75,7 +76,7 @@ for (i in day_list){
     temp_url <- paste0(airnowtech_files,Year_to_analyze,"/",i,"/",fileName)
     download.file(temp_url,destination_file)
   }
-}
+})
 
 ```
 
@@ -88,24 +89,28 @@ file_list <- list.files(dat_folder)
 #empty data frame
 dataset <- data.frame()
 
+system.time(
 #read and bind all dat files into the empty data frame
 for (i in 1:length(file_list)){
   setwd(dat_folder)
   temp_data <- fread(file_list[i], sep = "|", header = F,  stringsAsFactors = F) 
   dataset <- rbindlist(list(dataset, temp_data), use.names = T) 
-}
+})
 
 #----------
 #ALTHOUGH NOT USED, THIS SECTION READS ALL DAT FILES DIRECTLY INTO A DATA FRAME, AS OPPOSED TO DOWNLOADING THEM 
+
 # #empty data frame
 # df_total = data.frame()
 # 
+# system.time(
 # #loop to read the dat files for the selected days and copy into the empty data frame
 # for (i in day_list){
 #   temp_url <- paste0(airnowtech_files,Year_to_analyze,"/",i,"/",fileName)
-#   data <- read.delim(temp_url, header = FALSE, sep="|", skip=2, as.is=TRUE)
+#   data <- read.delim(temp_url, header = FALSE, sep="|", as.is=TRUE)
 #   df_total <- rbind(df_total,data)
-# }
+# })
+
 #----------
 
 #list of names for the header of the data frame
