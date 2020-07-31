@@ -218,7 +218,7 @@ month_summary
 ggplot(Month_analysis) +
   geom_boxplot(aes(y = AQI_Difference), fill = "#6fa4c6") +
   theme_classic() +
-  ggtitle(paste0(month(Month_to_analyze, label = T, abbr = F), " difference between Forecast \nand Daily Max", subtitle = "\nWhere positive means the forecast was \nhigher than the actual")) +
+  ggtitle(paste0(lubridate::month(Month_to_analyze, label = T, abbr = F), " difference between Forecast \nand Daily Max", subtitle = "\nWhere positive means the forecast was \nhigher than the actual")) +
   theme(axis.title.x=element_blank(),
         axis.text.x=element_blank(),
         axis.ticks.x=element_blank())
@@ -250,7 +250,8 @@ Some takeaways from the cross tabulation:
 # Full Dataset
 ```{r, echo=FALSE}
 Month_analysis %>% 
-   kable() %>% 
+  mutate(Actual_Category = cell_spec(Actual_Category, "html", color = "white", background = ifelse(Actual_Category == Forecast_Category, "#22e636", "red"))) %>% 
+  kable("html", escape = F) %>% 
    kable_styling()
 ```
 
