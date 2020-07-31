@@ -258,6 +258,16 @@ Month_analysis %>%
   kable("html", escape = F) %>% 
    kable_styling()
 
+# to export table to an HTML table, un-comment the code below
+# Month_analysis %>% 
+#   mutate("Same" = ifelse(Forecast_Category == Actual_Category, 1, 0),
+#     Forecast_Category = cell_spec(Forecast_Category, "html", color = "white", background = ifelse(Same == 1, "#22e636", "red")), 
+#     Actual_Category = cell_spec(Actual_Category, "html", color = "white", background = ifelse(Same == 1, "#22e636", "red")),
+#     Actual_AQI = cell_spec(Actual_AQI, "html", background = ifelse(Actual_AQI >100, "orange", "white"))) %>% 
+#   select(-Same) %>% 
+#   kable("html", escape = F) %>% 
+#    kable_styling() %>% 
+#   save_kable(file = "table1.html", self_contained = T)
 
 # these chunks will color the entire row. I could not successfully cmobine row_spec with col_spec... 
 # Month_analysis %>% 
