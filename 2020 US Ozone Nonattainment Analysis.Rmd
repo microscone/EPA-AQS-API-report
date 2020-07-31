@@ -23,6 +23,7 @@ library(geojsonio)
 library(data.table)
 library(htmlwidgets)
 library(htmltools)
+library(readxl)
 ```
 
 
@@ -144,7 +145,7 @@ US_4thMax <- AQ2020 %>%
   filter(CountryCode %in% US_Country_Codes) %>%
   filter(Param_Name == "OZONE-8HR") %>%
   rename("Avg_8hr_4thMax" = Value) %>%
-  group_by(SiteName) %>% 
+  group_by(Monitor_ID) %>% 
   arrange(desc(AQI_Value)) %>% 
   slice(4)
 
@@ -153,8 +154,6 @@ US_4thMax <- AQ2020 %>%
 
 
 ```{r, include = FALSE}
-
-require(readxl)
 
 #url of official ozone design values for 2019
 ozoneDV2019_file <- "https://www.epa.gov/sites/production/files/2020-05/o3_designvalues_2017_2019_final_05_26_20.xlsx"
