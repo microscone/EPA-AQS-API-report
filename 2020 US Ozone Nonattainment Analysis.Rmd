@@ -23,6 +23,7 @@ library(geojsonio)
 library(data.table)
 library(htmlwidgets)
 library(htmltools)
+library(readxl)
 ```
 
 
@@ -110,7 +111,7 @@ for (i in 1:length(file_list)){
 #   data <- read.delim(temp_url, header = FALSE, sep="|", as.is=TRUE)
 #   df_total <- rbind(df_total,data)
 # })
-
+ 
 #----------
 
 #list of names for the header of the data frame
@@ -144,7 +145,7 @@ US_4thMax <- AQ2020 %>%
   filter(CountryCode %in% US_Country_Codes) %>%
   filter(Param_Name == "OZONE-8HR") %>%
   rename("Avg_8hr_4thMax" = Value) %>%
-  group_by(SiteName) %>% 
+  group_by(Monitor_ID) %>% 
   arrange(desc(AQI_Value)) %>% 
   slice(4)
 
@@ -153,8 +154,6 @@ US_4thMax <- AQ2020 %>%
 
 
 ```{r, include = FALSE}
-
-require(readxl)
 
 #url of official ozone design values for 2019
 ozoneDV2019_file <- "https://www.epa.gov/sites/production/files/2020-05/o3_designvalues_2017_2019_final_05_26_20.xlsx"
@@ -211,6 +210,24 @@ US_2020DV$O3_NAAQS_Attainment <- cut(US_2020DV$Draft_DV_18_20,c(0,60,65,70,75,80
 monitorCol <- colorFactor(c('blue','purple','green','yellow','orange','red'), 
                           domain = c('< 61','61-65','66-70','71-75','76-80','>80'))
 
+tag.map.title <- tags$style(HTML("
+  .leaflet-control.map-title { 
+    transform: translate(-50%,20%);
+    position: fixed !important;
+    left: 50%;
+    text-align: center;
+    padding-left: 8px; 
+    padding-right: 8px; 
+    background: rgba(192,192,192,1);
+    font-weight: bold;
+    font-size: 20px;
+  }
+"))
+
+title <- tags$div(
+  tag.map.title, HTML(paste0("AirNow Data From ",ozone_start_date," Through ",Date_Today))
+)  
+
 # The Leaflet map widget is set to a variable "map".
 # Layers are defined for use with an interactive layer display.
 map_combined <- leaflet() %>% 
@@ -251,6 +268,8 @@ map_combined <- leaflet() %>%
   
   addLegend('bottomright', pal = monitorCol, values = US_4thMax$O3_2020_4thMax,
             title = '2020 Preliminary Ozone Values',opacity = 1) %>%
+  
+  addControl(title, position = "topright", className="map-title") %>%
   
   addLayersControl(
     baseGroups = c("2020 4th Max", "2020 DV"),
