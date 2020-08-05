@@ -19,11 +19,11 @@ library(gmodels)
 library(knitr)
 library(kableExtra)
 library(leaflet)
-library(geojsonio)
 library(data.table)
 library(htmlwidgets)
 library(htmltools)
 library(readxl)
+library(geojsonsf)
 ```
 
 
@@ -228,6 +228,16 @@ title <- tags$div(
   tag.map.title, HTML(paste0("AirNow Data From ",ozone_start_date," Through ",Date_Today))
 )  
 
+# reading GeoJSON file for NAA boundaries
+US_2015_O3_NAA <- geojson_sf("US_2015_ozone_NAA_4326.geojson")
+
+# # reading GeoJSON file for state
+# US_states <- geojson_sf("US_States_4326.geojson")
+
+naa_pal <- colorFactor(
+  palette = "Oranges",
+  domain = US_2015_O3_NAA$classification)
+
 # The Leaflet map widget is set to a variable "map".
 # Layers are defined for use with an interactive layer display.
 map_combined <- leaflet() %>% 
@@ -237,7 +247,27 @@ map_combined <- leaflet() %>%
   
   #a third-party basemap is added
   addProviderTiles(providers$CartoDB.Positron) %>%
-
+  
+  # a polygon layer is added for the US NAA object and its outline color and opacity are set
+  addPolygons(data=US_2015_O3_NAA,
+              stroke = TRUE,
+              weight = 2,
+              color = "black",
+              smoothFactor = 0.2,
+              fillOpacity = .8,
+              fillColor = ~naa_pal(classification),
+              popup = as.character(paste0(US_2015_O3_NAA$area_name," NAA","<br>",
+                                          "Classification: ",US_2015_O3_NAA$classification))) %>%
+  
+  # # a polygon layer is added for the US states object and its outline color and opacity are set
+  # addPolygons(data=US_states,
+  #             stroke = TRUE,
+  #             smoothFactor = 0.2,
+  #             weight = 2,
+  #             opacity = 1.0,
+  #             color = "black",
+  #             fillColor = "transparent") %>%
+  # 
   # add circle markers for the monitors
   addCircleMarkers(data = US_4thMax,
                    ~Longitude,
@@ -251,7 +281,7 @@ map_combined <- leaflet() %>%
                    radius = 4,
                    stroke = F, fillOpacity = 1,
                    group = "2020 4th Max") %>%
-  
+
   # add circle markers for the monitors
   addCircleMarkers(data = US_2020DV,
                    ~Longitude,
@@ -264,16 +294,20 @@ map_combined <- leaflet() %>%
                    color = ~monitorCol(O3_NAAQS_Attainment),
                    radius = 4,
                    stroke = F, fillOpacity = 1,
-                   group = "2020 DV")%>%
-  
+                   group = "2020 DV") %>%
+
   addLegend('bottomright', pal = monitorCol, values = US_4thMax$O3_2020_4thMax,
             title = '2020 Preliminary Ozone Values',opacity = 1) %>%
-  
-  addControl(title, position = "topright", className="map-title") %>%
-  
+
   addLayersControl(
     baseGroups = c("2020 4th Max", "2020 DV"),
-    options = layersControlOptions(collapsed = FALSE))
+    options = layersControlOptions(collapsed = FALSE)) %>%
+  
+  addLegend('bottomleft', pal = naa_pal, values = US_2015_O3_NAA$classification,
+            title = '2015 Ozone NAA Classifications',opacity = 1) %>%
+  
+  addControl(title, position = "topright", className="map-title")
+
 
 #the map object is called, to create the leaflet map.
 map_combined
