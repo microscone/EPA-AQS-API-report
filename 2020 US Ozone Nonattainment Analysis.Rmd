@@ -24,6 +24,8 @@ library(htmlwidgets)
 library(htmltools)
 library(readxl)
 library(geojsonsf)
+library(sp)
+library(sf)
 ```
 
 
@@ -139,15 +141,56 @@ US_daily_max <- AQ2020 %>%
   filter(Param_Name == "OZONE-8HR") %>%
   rename("Avg_8hr" = Value)
 
+num_exceedences <- US_daily_max %>% 
+    filter(Avg_8hr > 70)
+
+#calculates how many values are included for each monitor in the US_4thMax df
+exceedences_by_mon <- plyr::ddply(US_daily_max,~Monitor_ID,summarise,'days_>70ppb'=sum(Avg_8hr > 70))
+
+US_mon_coords <- US_daily_max %>%
+  select(Monitor_ID,SiteName,Longitude,Latitude) %>%
+  group_by(Monitor_ID) %>% 
+  slice(1) %>% 
+  left_join(.,exceedences_by_mon, by = "Monitor_ID", keep = F)
+
 
 #selecting the 4 highest 8hr ozone max values for each monitor in the Philly NAA
-US_4thMax <- AQ2020 %>% 
+US_4_Highest <- AQ2020 %>% 
   filter(CountryCode %in% US_Country_Codes) %>%
   filter(Param_Name == "OZONE-8HR") %>%
   rename("Avg_8hr_4thMax" = Value) %>%
   group_by(Monitor_ID) %>% 
   arrange(desc(AQI_Value)) %>% 
-  slice(4)
+  slice(1:4)
+
+#calculates how many values are included for each monitor in the US_4thMax df
+num_monitors <- plyr::ddply(US_4_Highest,~Monitor_ID,summarise,num_days=length(unique(Date)))
+
+#empty vector
+num_vec <- c()
+
+#loop to create a list of values (1 through 4) to represent the n-highest values by monitor
+#the values create this list based upon the monitors and numbers in num_monitors
+for (i in 1:nrow(num_monitors)){
+  z <- seq(1,num_monitors[i,2],1)
+  end <- length(num_vec)+1
+  num_vec <- append(num_vec,z,end)
+}
+
+#the num_vec of values representing the n-highest values are added to the df
+US_4_Highest$n_highest <- num_vec
+
+#a "wide" pivot table is created which includes columsn for the 4 highest ozone values
+US_Pivot <- US_4_Highest %>%
+  select(Monitor_ID,SiteName,Avg_8hr_4thMax,n_highest) %>%
+  pivot_wider(names_from = n_highest,values_from = Avg_8hr_4thMax)
+
+#renaming columns of pivot table
+colnames(US_Pivot) <- c("Monitor_ID","SiteName","2020_Max","2020_2nd_High","2020_3rd_High","2020_4th_High")
+
+#alternate df of US_Pivot to include coordinates
+US_Pivot_Coords <- US_Pivot %>%
+  left_join(.,US_mon_coords, by = c("Monitor_ID","SiteName"), keep = F)
 
 ```
 
@@ -176,19 +219,29 @@ headersDVfile <- c("State","County","CBSA","CSA","NAA_Name","EPA_Region","Monito
 #applying header names to data frame
 colnames(ozoneDV2019) <- headersDVfile
 
-US_4thMax_short <-  US_4thMax %>% 
-  mutate(Avg_8hr_4thMax_ppm = Avg_8hr_4thMax/1000) %>%
-  select(SiteName,Monitor_ID,Avg_8hr_4thMax_ppm)
+#duplicates data frame from the original
+ozondDV2019df <- ozoneDV2019
+
+#converts the ppm values to ppb values
+ozondDV2019df$`2018_4thMax` <- ozondDV2019df$`2018_4thMax`*1000
+ozondDV2019df$`2019_4thMax` <- ozondDV2019df$`2019_4thMax`*1000
+
+#removes the comma and state abbreviations in the NAA names in order to match those in the NAA polygon file, below.
+ozondDV2019df$NAA_Name <- substr(ozondDV2019df$NAA_Name,1,regexpr(",",ozondDV2019df$NAA_Name)-1)
+
+#the names of these two NAAs are adjusted to match the names in the NAA polygon file, below.
+ozondDV2019df[ozondDV2019df == 'Dona Ana County (Sunland Park)'] <- 'Dona Ana County (Sunland Park Area)'
+ozondDV2019df[ozondDV2019df == 'Pechanga Band of Luiseno Mission Indians'] <- 'Pechanga Band of Luiseno Mission Indians of the Pechanga Reservation'
 
 #filters the 2019 DV data for the Philly monitors, joins the 2020 4th Max value to the table
-US_2020DV <- ozoneDV2019 %>%
-  select(State,County,Monitor_ID,Latitude,Longitude,`2018_4thMax`,`2019_4thMax`) %>%
-  left_join(.,US_4thMax_short, by = "Monitor_ID", keep = F) 
+US_2020DV <- ozondDV2019df %>%
+  select(State,County,Monitor_ID,NAA_Name,Latitude,Longitude,`2018_4thMax`,`2019_4thMax`) %>%
+  left_join(.,US_Pivot, by = "Monitor_ID", keep = F) 
   
-
 #calculates the draft 2018-2020 design value for ozone for the monitors in the Philly NAA
-US_2020DV$Draft_DV_18_20 <- apply(US_2020DV[,c(6,7,9)], 1, function(x) trunc(mean(x)*1000))
+US_2020DV$Draft_DV_18_20 <- apply(US_2020DV[,c(7,8,13)], 1, function(x) trunc(mean(x)))
 
+#removes records with no draft DV for 2020
 US_2020DV <- US_2020DV %>%
  filter(!is.na(Draft_DV_18_20))
   
@@ -200,16 +253,16 @@ US_2020DV <- US_2020DV %>%
 ```{r, echo=FALSE}
 
 #bins the draft design value data, above and below the 0.070ppm ozone NAAQS
-US_4thMax$O3_2020_4thMax <- cut(US_4thMax$Avg_8hr_4thMax,c(0,60,65,70,75,80,150), include.lowest = T,labels = c('< 61','61-65','66-70','71-75','76-80','>80'))
+US_Pivot_Coords$O3_2020_4thMax <- cut(US_Pivot_Coords$`2020_4th_High`,c(0,60,65,70,75,80,150), include.lowest = T,labels = c('< 61','61-65','66-70','71-75','76-80','>80'))
 
 #bins the draft design value data, above and below the 0.070ppm ozone NAAQS
 US_2020DV$O3_NAAQS_Attainment <- cut(US_2020DV$Draft_DV_18_20,c(0,60,65,70,75,80,150), include.lowest = T,labels = c('< 61','61-65','66-70','71-75','76-80','>80'))
-
 
 #color pallette is set
 monitorCol <- colorFactor(c('blue','purple','green','yellow','orange','red'), 
                           domain = c('< 61','61-65','66-70','71-75','76-80','>80'))
 
+#alters the leaflet html options for styling the title of the map
 tag.map.title <- tags$style(HTML("
   .leaflet-control.map-title { 
     transform: translate(-50%,20%);
@@ -224,6 +277,7 @@ tag.map.title <- tags$style(HTML("
   }
 "))
 
+#specifies value of title
 title <- tags$div(
   tag.map.title, HTML(paste0("AirNow Data From ",ozone_start_date," Through ",Date_Today))
 )  
@@ -231,9 +285,21 @@ title <- tags$div(
 # reading GeoJSON file for NAA boundaries
 US_2015_O3_NAA <- geojson_sf("US_2015_ozone_NAA_4326.geojson")
 
+#unique list of NAAs and the design value site for each, based upon highes draft 2020 DV
+NAA_DV_Site <- US_2020DV %>%
+  select(Monitor_ID,SiteName,NAA_Name,Draft_DV_18_20) %>%
+  filter(!is.na(NAA_Name)) %>%
+  group_by(NAA_Name) %>% 
+  arrange(desc(Draft_DV_18_20)) %>% 
+  slice(1)
+
+#design value data of NAA_DV_Site is merged with the spatial data of the NAA polygons, to create a new layer
+new_NAA_Polygons <- merge(US_2015_O3_NAA,NAA_DV_Site,by.x='area_name',by.y='NAA_Name')
+
 # # reading GeoJSON file for state
 # US_states <- geojson_sf("US_States_4326.geojson")
 
+#creates a orange color palette for the various NAA classifications
 naa_pal <- colorFactor(
   palette = "Oranges",
   domain = US_2015_O3_NAA$classification)
@@ -245,19 +311,22 @@ map_combined <- leaflet() %>%
   # the zoom and center is set
   setView(-77, 39, zoom = 5) %>%
   
-  #a third-party basemap is added
+  #a basemap is added
   addProviderTiles(providers$CartoDB.Positron) %>%
   
   # a polygon layer is added for the US NAA object and its outline color and opacity are set
-  addPolygons(data=US_2015_O3_NAA,
+  addPolygons(data=new_NAA_Polygons,
               stroke = TRUE,
               weight = 2,
               color = "black",
               smoothFactor = 0.2,
               fillOpacity = .8,
               fillColor = ~naa_pal(classification),
-              popup = as.character(paste0(US_2015_O3_NAA$area_name," NAA","<br>",
-                                          "Classification: ",US_2015_O3_NAA$classification))) %>%
+              popup = as.character(paste0(new_NAA_Polygons$area_name," NAA","<br>",
+                                          "Classification: ",new_NAA_Polygons$classification,"<br>",
+                                          "Design Value Site Name: ",new_NAA_Polygons$SiteName,"<br>",
+                                          "Design Value Site ID: ",new_NAA_Polygons$Monitor_ID,"<br>",
+                                          "Design Value Site 2020 DV: ",new_NAA_Polygons$Draft_DV_18_20))) %>%
   
   # # a polygon layer is added for the US states object and its outline color and opacity are set
   # addPolygons(data=US_states,
@@ -267,15 +336,16 @@ map_combined <- leaflet() %>%
   #             opacity = 1.0,
   #             color = "black",
   #             fillColor = "transparent") %>%
-  # 
+  
   # add circle markers for the monitors
-  addCircleMarkers(data = US_4thMax,
+  addCircleMarkers(data = US_Pivot_Coords,
                    ~Longitude,
                    ~Latitude,
-                   popup = as.character(paste0("Site Name: ",US_4thMax$SiteName,"<br>",
-                                               "AQS ID: ",US_4thMax$Monitor_ID,"<br>",
-                                               "2020 4th Max: ",US_4thMax$Avg_8hr_4thMax," ppb")),
-                   label = as.character(US_4thMax$SiteName),
+                   popup = as.character(paste0("Site Name: ",US_Pivot_Coords$SiteName,"<br>",
+                                               "AQS ID: ",US_Pivot_Coords$Monitor_ID,"<br>",
+                                               "2020 4th Max: ",US_Pivot_Coords$`2020_4th_High`," ppb","<br>",
+                                               "# Days >70ppb: ",US_Pivot_Coords$`days_>70ppb`)),
+                   label = as.character(US_Pivot_Coords$SiteName),
                    labelOptions = labelOptions(textsize = "15px"),
                    color = ~monitorCol(O3_2020_4thMax),
                    radius = 4,
@@ -296,22 +366,25 @@ map_combined <- leaflet() %>%
                    stroke = F, fillOpacity = 1,
                    group = "2020 DV") %>%
 
-  addLegend('bottomright', pal = monitorCol, values = US_4thMax$O3_2020_4thMax,
+  # add legend for the ozone values
+  addLegend('bottomleft', pal = monitorCol, values = US_Pivot_Coords$O3_2020_4thMax,
             title = '2020 Preliminary Ozone Values',opacity = 1) %>%
-
-  addLayersControl(
-    baseGroups = c("2020 4th Max", "2020 DV"),
-    options = layersControlOptions(collapsed = FALSE)) %>%
   
-  addLegend('bottomleft', pal = naa_pal, values = US_2015_O3_NAA$classification,
+  # adds radio buttons for switching layers between 4th max and DV values
+  addLayersControl(baseGroups = c("2020 4th Max", "2020 DV"),options = layersControlOptions(collapsed = FALSE)) %>%
+  
+  # add legend for the NAA classifications
+  addLegend('bottomright', pal = naa_pal, values = US_2015_O3_NAA$classification,
             title = '2015 Ozone NAA Classifications',opacity = 1) %>%
   
+  # adds a title in the top of the map
   addControl(title, position = "topright", className="map-title")
 
 
 #the map object is called, to create the leaflet map.
 map_combined
 
+#creates a filename
 htmlFileName <- paste0(YOC_folder,"2020_Draft_Ozone_Values_",Date_Today,".html")
 
 # exporting the map widget to a single html file
