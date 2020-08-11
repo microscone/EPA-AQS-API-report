@@ -14,13 +14,12 @@ library(htmltools)
 library(readxl)
 library(aws.s3)
 
-Sys.setenv("AWS_ACCESS_KEY_ID" = "KEY",
-           "AWS_SECRET_ACCESS_KEY" = "SECRET KEY",
-           "AWS_DEFAULT_REGION" = "us-east-2")
-
+Sys.setenv("AWS_ACCESS_KEY_ID" = "AWS_ACCESS_KEY_ID", 
+             "AWS_SECRET_ACCESS_KEY" = "AWS_SECRET_ACCESS_KEY",
+             "AWS_DEFAULT_REGION" = "us-east-2")
+  
 S3_Bucket_name <- "shiny-practice"
 bucket_contents <- get_bucket(S3_Bucket_name)
-
 
 #Enter the year of data you want to analyze
 Year_to_analyze <- "2020"
@@ -45,21 +44,22 @@ airnowtech_files <- "https://s3-us-west-1.amazonaws.com//files.airnowtech.org/ai
 fileName <- "daily_data_v2.dat"
 
 #actual download:
-for (i in nrow(dates_missing)){
+for (i in 1:nrow(dates_missing)){
   #only downloads new files which have not already been downloaded
-  tmp <- tempfile(fileext = as.character(i))
+  tmp <- tempfile(pattern = as.character(i))
   on.exit(unlink(tmp))
   temp_url <- paste0(airnowtech_files,Year_to_analyze,"/",dates_missing[i, 1],"/",fileName)
     temp_file <- fread(temp_url, sep = "|", header = F,  stringsAsFactors = F)
     #place file into S3 bucket
-    write_delim(temp_file, path = tmp)
+    write_delim(temp_file, path = tmp, delim = "|")
     put_object(tmp, object = paste0(dates_missing[i, 1], fileName), bucket = S3_Bucket_name)
   }
 
+bucket_contents <- get_bucket(S3_Bucket_name)
 
 #These lines are successful
 #creates list of all file names in bucket, then reads all files into a dataframe
-system.time({
+
 #These lines of code extract all data from the bucket and join into a dataframe
   #list all file names in bucket
   bucket_names <- vector()
@@ -73,6 +73,9 @@ system.time({
   dataset <- data.frame()
   for (i in 1:length(bucket_names)){
     temp_data <- rawToChar(get_object(bucket_names[i], bucket = S3_Bucket_name))
-    dataset <- rbind(dataset, fread(temp_data, sep = "|", header = F,  stringsAsFactors = F), use.names = T)
+    dataset <- rbind(dataset, fread(temp_data, sep = "|", header = T,  stringsAsFactors = F), use.names = T)
   }
-})
+
+dataset <- dataset %>% 
+  filter(V1 != TRUE)
+
