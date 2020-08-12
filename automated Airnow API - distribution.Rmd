@@ -26,7 +26,7 @@ library(openair)
 #enter the number of days in the month you want to analyze here:
 #Enter the date of the first of the month that you want to analyze, in YYYY-MM-DD Format. 
 #For instance, if you want to analyze June of 2020, enter "2020-06-01"
-Month_to_analyze <- "2020-07-01"
+Month_to_analyze <- "2020-08-01"
 ```
 
 
@@ -41,7 +41,7 @@ for (i in month_vector) {
   API_query <- GET(paste0("http://www.airnowapi.org/aq/forecast/zipCode/?zipCode=19806&API_KEY=",
                           "428E6635-36C1-4DA8-A90A-ED982938204A", #SHANE API KEY
                           #"0269BB74-0C96-4CA8-A479-9FDA840A7A5E", #MARK API KEY
-                          "&date=2020-07-",
+                          "&date=2020-08-",
                             as.character(i),
                              "&format=application/json"))
   AQI_df <-  as.data.frame(fromJSON(rawToChar(API_query$content)))

@@ -26,9 +26,13 @@ library(readxl)
 library(geojsonsf)
 library(sp)
 library(sf)
+library(RCurl)
+library(leafpop)
+library(crosstalk)
+library(leafsync)
 ```
 
-
+This section downloads the dat files from AirNow.
 ```{r, include = FALSE}
 #Enter the year of data you want to analyze
 Year_to_analyze <- "2020"
@@ -83,7 +87,7 @@ for (i in day_list){
 
 ```
 
-
+This section compiles the dat files into a data frame.
 ```{r, include = FALSE}
 
 #list of dat files in folder
@@ -135,18 +139,20 @@ countryCodeList <- unique(AQ2020$CountryCode)
 
 US_Country_Codes <- c('840','021','001','093','113')
 
-#selecting only the records for monitors in the Philly NAA for 8hr ozone average max values
+#filtering the data frame for monitors in the US and their 8hr daily max values, and renaming field for 8hr ozone average max values
 US_daily_max <- AQ2020 %>% 
   filter(CountryCode %in% US_Country_Codes) %>%
   filter(Param_Name == "OZONE-8HR") %>%
   rename("Avg_8hr" = Value)
 
+#filters records for days when monitors exceed 70ppb
 num_exceedences <- US_daily_max %>% 
     filter(Avg_8hr > 70)
 
 #calculates how many values are included for each monitor in the US_4thMax df
 exceedences_by_mon <- plyr::ddply(US_daily_max,~Monitor_ID,summarise,'days_>70ppb'=sum(Avg_8hr > 70))
 
+#intermediary data frame
 US_mon_coords <- US_daily_max %>%
   select(Monitor_ID,SiteName,Longitude,Latitude) %>%
   group_by(Monitor_ID) %>% 
@@ -195,7 +201,7 @@ US_Pivot_Coords <- US_Pivot %>%
 ```
 
 
-
+This section downloads the "official" Excel files for 2019 ozone design values from the EPA.
 ```{r, include = FALSE}
 
 #url of official ozone design values for 2019
@@ -233,23 +239,26 @@ ozondDV2019df$NAA_Name <- substr(ozondDV2019df$NAA_Name,1,regexpr(",",ozondDV201
 ozondDV2019df[ozondDV2019df == 'Dona Ana County (Sunland Park)'] <- 'Dona Ana County (Sunland Park Area)'
 ozondDV2019df[ozondDV2019df == 'Pechanga Band of Luiseno Mission Indians'] <- 'Pechanga Band of Luiseno Mission Indians of the Pechanga Reservation'
 
-#filters the 2019 DV data for the Philly monitors, joins the 2020 4th Max value to the table
+#filters the 2019 DV data, joins the 2020 4th Max value to the table
 US_2020DV <- ozondDV2019df %>%
   select(State,County,Monitor_ID,NAA_Name,Latitude,Longitude,`2018_4thMax`,`2019_4thMax`) %>%
-  left_join(.,US_Pivot, by = "Monitor_ID", keep = F) 
+  left_join(.,US_Pivot, by = "Monitor_ID", keep = F)  %>%
+  left_join(.,exceedences_by_mon, by = "Monitor_ID", keep = F)
   
-#calculates the draft 2018-2020 design value for ozone for the monitors in the Philly NAA
+#calculates the draft 2018-2020 design value for ozone for the monitors
 US_2020DV$Draft_DV_18_20 <- apply(US_2020DV[,c(7,8,13)], 1, function(x) trunc(mean(x)))
 
 #removes records with no draft DV for 2020
 US_2020DV <- US_2020DV %>%
  filter(!is.na(Draft_DV_18_20))
-  
+
+#duplicate data frame for use with 2nd mapping effort.
+US_2020DV_2 <- US_2020DV
 
 ```
 
 
-
+This section prepares a leaflet map with 2 layers, for 2020 DV and 2020 4th max.
 ```{r, echo=FALSE}
 
 #bins the draft design value data, above and below the 0.070ppm ozone NAAQS
@@ -273,7 +282,7 @@ tag.map.title <- tags$style(HTML("
     padding-right: 8px; 
     background: rgba(192,192,192,1);
     font-weight: bold;
-    font-size: 20px;
+    font-size: 18px;
   }
 "))
 
@@ -289,8 +298,8 @@ US_2015_O3_NAA <- geojson_sf("US_2015_ozone_NAA_4326.geojson")
 NAA_DV_Site <- US_2020DV %>%
   select(Monitor_ID,SiteName,NAA_Name,Draft_DV_18_20) %>%
   filter(!is.na(NAA_Name)) %>%
-  group_by(NAA_Name) %>% 
-  arrange(desc(Draft_DV_18_20)) %>% 
+  group_by(NAA_Name) %>%
+  arrange(desc(Draft_DV_18_20)) %>%
   slice(1)
 
 #design value data of NAA_DV_Site is merged with the spatial data of the NAA polygons, to create a new layer
@@ -337,14 +346,43 @@ map_combined <- leaflet() %>%
   #             color = "black",
   #             fillColor = "transparent") %>%
   
+    #this following two addCircleMarker objects are commended out, depending on the popup info to display
+  # add circle markers for the monitors
+  # addCircleMarkers(data = US_Pivot_Coords,
+  #                  ~Longitude,
+  #                  ~Latitude,
+  #                  popup = as.character(paste0("Site Name: ",US_Pivot_Coords$SiteName,"<br>",
+  #                                              "AQS ID: ",US_Pivot_Coords$Monitor_ID,"<br>",
+  #                                              "2020 4th Max: ",US_Pivot_Coords$`2020_4th_High`," ppb","<br>",
+  #                                              "# Days >70ppb: ",US_Pivot_Coords$`days_>70ppb`)),
+  #                  label = as.character(US_Pivot_Coords$SiteName),
+  #                  labelOptions = labelOptions(textsize = "15px"),
+  #                  color = ~monitorCol(O3_2020_4thMax),
+  #                  radius = 4,
+  #                  stroke = F, fillOpacity = 1,
+  #                  group = "2020 4th Max") %>%
+  # 
+  # # add circle markers for the monitors
+  # addCircleMarkers(data = US_2020DV,
+  #                  ~Longitude,
+  #                  ~Latitude,
+  #                  popup = as.character(paste0("Site Name: ",US_2020DV$SiteName,"<br>",
+  #                                              "AQS ID: ",US_2020DV$Monitor_ID,"<br>",
+  #                                              "2020 Draft DV: ",US_2020DV$Draft_DV_18_20," ppb")),
+  #                  label = as.character(US_2020DV$SiteName),
+  #                  labelOptions = labelOptions(textsize = "15px"),
+  #                  color = ~monitorCol(O3_NAAQS_Attainment),
+  #                  radius = 4,
+  #                  stroke = F, fillOpacity = 1,
+  #                  group = "2020 DV") %>%
+
   # add circle markers for the monitors
   addCircleMarkers(data = US_Pivot_Coords,
                    ~Longitude,
                    ~Latitude,
-                   popup = as.character(paste0("Site Name: ",US_Pivot_Coords$SiteName,"<br>",
-                                               "AQS ID: ",US_Pivot_Coords$Monitor_ID,"<br>",
-                                               "2020 4th Max: ",US_Pivot_Coords$`2020_4th_High`," ppb","<br>",
-                                               "# Days >70ppb: ",US_Pivot_Coords$`days_>70ppb`)),
+                   popup = popupTable(US_Pivot_Coords,
+                                      zcol = c("Monitor_ID","SiteName","days_>70ppb","2020_Max","2020_2nd_High",
+                                               "2020_3rd_High","2020_4th_High")),
                    label = as.character(US_Pivot_Coords$SiteName),
                    labelOptions = labelOptions(textsize = "15px"),
                    color = ~monitorCol(O3_2020_4thMax),
@@ -356,16 +394,15 @@ map_combined <- leaflet() %>%
   addCircleMarkers(data = US_2020DV,
                    ~Longitude,
                    ~Latitude,
-                   popup = as.character(paste0("Site Name: ",US_2020DV$SiteName,"<br>",
-                                               "AQS ID: ",US_2020DV$Monitor_ID,"<br>",
-                                               "2020 Draft DV: ",US_2020DV$Draft_DV_18_20," ppb")),
+                   popup = popupTable(US_2020DV,
+                                      zcol = c("Monitor_ID","SiteName","NAA_Name","Draft_DV_18_20")),
                    label = as.character(US_2020DV$SiteName),
                    labelOptions = labelOptions(textsize = "15px"),
                    color = ~monitorCol(O3_NAAQS_Attainment),
                    radius = 4,
                    stroke = F, fillOpacity = 1,
                    group = "2020 DV") %>%
-
+  
   # add legend for the ozone values
   addLegend('bottomleft', pal = monitorCol, values = US_Pivot_Coords$O3_2020_4thMax,
             title = '2020 Preliminary Ozone Values',opacity = 1) %>%
@@ -378,15 +415,246 @@ map_combined <- leaflet() %>%
             title = '2015 Ozone NAA Classifications',opacity = 1) %>%
   
   # adds a title in the top of the map
-  addControl(title, position = "topright", className="map-title")
+  addControl(title, position = "topright", className="map-title") 
 
-
-#the map object is called, to create the leaflet map.
+#calling the map object
 map_combined
 
 #creates a filename
-htmlFileName <- paste0(YOC_folder,"2020_Draft_Ozone_Values_",Date_Today,".html")
+htmlFileName <- paste0(YOC_folder,"2020_Draft_Ozone_Values",".html")
 
 # exporting the map widget to a single html file
 saveWidget(map_combined, htmlFileName, selfcontained = TRUE)
+
 ```
+
+
+This section prepares an HTML page with side-by-side synchronizing maps, showing the 2020 DV and the 2020 4th max.
+The monitors can be filtered by the 2020 DV categories, which filters the monitors on both maps.
+```{r, echo=FALSE}
+
+#bins the draft design value data, above and below the 0.070ppm ozone NAAQS
+US_2020DV_2$O3_NAAQS_Attainment <- cut(US_2020DV_2$Draft_DV_18_20,c(0,60,65,70,75,80,200), include.lowest = T,labels = c('60 or below','61-65','66-70','71-75','76-80','Above 80'))
+
+#bins the draft design value data, above and below the 0.070ppm ozone NAAQS
+US_2020DV_2$O3_2020_4thMax <- cut(US_2020DV_2$`2020_4th_High`,c(0,60,65,70,75,80,150), include.lowest = T,labels = c('60 or below','61-65','66-70','71-75','76-80','Above 80'))
+
+#color pallette is set
+monitorCol2 <- colorFactor(c('blue','green','yellow','orange','red','purple'), 
+                          domain = c('60 or below','61-65','66-70','71-75','76-80','Above 80'))
+
+
+# reading GeoJSON file for NAA boundaries
+US_2015_O3_NAA <- geojson_sf("US_2015_ozone_NAA_4326.geojson")
+
+#unique list of NAAs and the design value site for each, based upon highes draft 2020 DV
+NAA_DV_Site <- US_2020DV_2 %>%
+  select(Monitor_ID,SiteName,NAA_Name,Draft_DV_18_20) %>%
+  filter(!is.na(NAA_Name)) %>%
+  group_by(NAA_Name) %>%
+  arrange(desc(Draft_DV_18_20)) %>%
+  slice(1)
+
+#design value data of NAA_DV_Site is merged with the spatial data of the NAA polygons, to create a new layer
+new_NAA_Polygons <- merge(US_2015_O3_NAA,NAA_DV_Site,by.x='area_name',by.y='NAA_Name')
+
+
+#creates a orange color palette for the various NAA classifications
+naa_pal <- colorFactor(
+  palette = "Oranges",
+  domain = US_2015_O3_NAA$classification)
+
+#a "SharedData" object is created
+#This creates a common data input for all interactive objects such as UI elements and compatible widgets.
+designValue_sd<- SharedData$new(US_2020DV_2)
+
+# The Leaflet map widget is set to a variable "m1".
+m1 <- leaflet() %>% 
+  
+  # the zoom and center is set
+  setView(-77, 39, zoom = 5) %>%
+  
+  #a basemap is added
+  addProviderTiles(providers$CartoDB.Positron) %>%
+  
+  # a polygon layer is added for the US NAA object and its outline color and opacity are set
+  addPolygons(data=new_NAA_Polygons,
+              stroke = TRUE,
+              weight = 2,
+              color = "black",
+              smoothFactor = 0.2,
+              fillOpacity = .8,
+              fillColor = ~naa_pal(classification),
+              popup = as.character(paste0(new_NAA_Polygons$area_name," NAA","<br>",
+                                          "Classification: ",new_NAA_Polygons$classification,"<br>",
+                                          "Design Value Site Name: ",new_NAA_Polygons$SiteName,"<br>",
+                                          "Design Value Site ID: ",new_NAA_Polygons$Monitor_ID,"<br>",
+                                          "Design Value Site 2020 DV: ",new_NAA_Polygons$Draft_DV_18_20))) %>%
+  
+  # add circle markers for the DV of the monitors
+  addCircleMarkers(data = designValue_sd,
+                   ~Longitude,
+                   ~Latitude,
+                   popup = as.character(paste0("Site Name: ",US_2020DV_2$SiteName,"<br>",
+                                               "AQS ID: ",US_2020DV_2$Monitor_ID,"<br>",
+                                               "2020 Draft DV: ",US_2020DV_2$Draft_DV_18_20," ppb")),
+                   label = as.character(US_2020DV_2$SiteName),
+                   labelOptions = labelOptions(textsize = "15px"),
+                   color = ~monitorCol2(O3_NAAQS_Attainment),
+                   radius = 4,
+                   stroke = F, fillOpacity = 1,
+                   group = "2020 DV") %>%
+  
+  # # add circle markers for the 4th max of the monitors
+  # addCircleMarkers(data = designValue_sd,
+  #                  ~Longitude,
+  #                  ~Latitude,
+  #                  popup = as.character(paste0("Site Name: ",US_2020DV_2$SiteName,"<br>",
+  #                                              "AQS ID: ",US_2020DV_2$Monitor_ID,"<br>",
+  #                                              "2020 4th Max: ",US_2020DV_2$`2020_4th_High`," ppb","<br>",
+  #                                              "# Days >70ppb: ",US_2020DV_2$`days_>70ppb`)),
+  #                  label = as.character(US_2020DV_2$SiteName),
+  #                  labelOptions = labelOptions(textsize = "15px"),
+  #                  color = ~monitorCol2(O3_2020_4thMax),
+  #                  radius = 4,
+  #                  stroke = F, fillOpacity = 1,
+  #                  group = "2020 4th Max") %>%
+
+  
+  # add legend for the ozone values
+  addLegend('bottomleft', pal = monitorCol2, values = US_2020DV_2$O3_NAAQS_Attainment,
+            title = '2020 Draft Design Values',opacity = 1) %>%
+  
+  # # adds radio buttons for switching layers between 4th max and DV values
+  # addLayersControl(baseGroups = c("2020 4th Max", "2020 DV"),options = layersControlOptions(collapsed = FALSE)) %>%
+  
+  # add legend for the NAA classifications
+  addLegend('bottomright', pal = naa_pal, values = US_2015_O3_NAA$classification,
+            title = '2015 Ozone NAA Classifications',opacity = 1)
+  
+#another leaflet map is created
+m2 <- leaflet() %>% 
+  
+  # the zoom and center is set
+  setView(-77, 39, zoom = 5) %>%
+  
+  #a basemap is added
+  addProviderTiles(providers$CartoDB.Positron) %>%
+  
+  # # a polygon layer is added for the US NAA object and its outline color and opacity are set
+  # addPolygons(data=new_NAA_Polygons,
+  #             stroke = TRUE,
+  #             weight = 2,
+  #             color = "black",
+  #             smoothFactor = 0.2,
+  #             fillOpacity = .8,
+  #             fillColor = ~naa_pal(classification),
+  #             popup = as.character(paste0(new_NAA_Polygons$area_name," NAA","<br>",
+  #                                         "Classification: ",new_NAA_Polygons$classification,"<br>",
+  #                                         "Design Value Site Name: ",new_NAA_Polygons$SiteName,"<br>",
+  #                                         "Design Value Site ID: ",new_NAA_Polygons$Monitor_ID,"<br>",
+  #                                         "Design Value Site 2020 DV: ",new_NAA_Polygons$Draft_DV_18_20))) %>%
+  
+  # # add circle markers for the DV of the monitors
+  # addCircleMarkers(data = designValue_sd,
+  #                  ~Longitude,
+  #                  ~Latitude,
+  #                  popup = as.character(paste0("Site Name: ",US_2020DV_2$SiteName,"<br>",
+  #                                              "AQS ID: ",US_2020DV_2$Monitor_ID,"<br>",
+  #                                              "2020 Draft DV: ",US_2020DV_2$Draft_DV_18_20," ppb","<br>",
+  #                                              "2020 4th Max: ",US_2020DV_2$`2020_4th_High`," ppb","<br>",
+  #                                              "# Days >70ppb: ",US_2020DV_2$`days_>70ppb`)),
+  #                  label = as.character(US_2020DV_2$SiteName),
+  #                  labelOptions = labelOptions(textsize = "15px"),
+  #                  color = ~monitorCol2(O3_NAAQS_Attainment),
+  #                  radius = 4,
+  #                  stroke = F, fillOpacity = 1,
+  #                  group = "2020 DV") %>%
+  
+  # add circle markers for the 4th max of the monitors
+  addCircleMarkers(data = designValue_sd,
+                   ~Longitude,
+                   ~Latitude,
+                   popup = as.character(paste0("Site Name: ",US_2020DV_2$SiteName,"<br>",
+                                               "AQS ID: ",US_2020DV_2$Monitor_ID,"<br>",
+                                               "2020 4th Max: ",US_2020DV_2$`2020_4th_High`," ppb","<br>",
+                                               "# Days >70ppb: ",US_2020DV_2$`days_>70ppb`)),
+                   label = as.character(US_2020DV_2$SiteName),
+                   labelOptions = labelOptions(textsize = "15px"),
+                   color = ~monitorCol2(O3_2020_4thMax),
+                   radius = 4,
+                   stroke = F, fillOpacity = 1,
+                   group = "2020 4th Max") %>%
+
+  
+  # add legend for the ozone values
+  addLegend('bottomleft', pal = monitorCol2, values = US_2020DV_2$O3_2020_4thMax,
+            title = '2020 4th Max',opacity = 1) 
+  
+  # # adds radio buttons for switching layers between 4th max and DV values
+  # addLayersControl(baseGroups = c("2020 4th Max", "2020 DV"),options = layersControlOptions(collapsed = FALSE)) %>%
+  
+  # # add legend for the NAA classifications
+  # addLegend('bottomright', pal = naa_pal, values = US_2015_O3_NAA$classification,
+  #           title = '2015 Ozone NAA Classifications',opacity = 1)
+
+
+#a synchronizing 2-map object is created from the 2 leaflet maps
+map_dual <- sync(m1,m2)
+
+#a filter is created which makes checkboxes for each of the values.
+DV_filter <- filter_checkbox("DV", "Design Values (ppb)", designValue_sd, ~O3_NAAQS_Attainment, inline = TRUE)
+
+#html code is used to create an html "widget" which specifies how the html page should look
+mapHTML <- tags$div(class="well well-lg",
+         tagList(
+           tags$h1(tags$strong(HTML("<center>Analysis of 2020 Ambient Monitor Data</center>"))),
+           p(""),
+           tags$h3(tags$strong(HTML(paste0("<center>AirNow Data From ",ozone_start_date," Through ",Date_Today,"</center")))),
+           bscols(HTML("<center>2020 Preliminary Design Values (ppb)</center>"),HTML("<center>2020 4th Max Daily 8-hr Ozone Averages (ppb)</center>")),
+           map_dual,
+           p(""),
+           p(""),
+           HTML("<center>Select a subset of design values to filter data points on map.</center"),
+           HTML(paste0("<center>",DV_filter,"</center>"))
+           )
+          )
+
+#the html object is called
+mapHTML
+
+#creates a filename
+htmlFileName2 <- paste0(YOC_folder,"Alt_2020_Draft_Ozone_Values",".html")
+
+#saves the html object to an html file.
+save_html(mapHTML,htmlFileName2)
+
+
+```
+
+
+This code is unnecessary if we move away from infinity free.
+```{r, echo=FALSE}
+
+
+#uploads html file to SCMP website via FTP
+login <- "epiz_26445108"
+secret <- "d5mTGZejwP4jfn6"
+uploadSite <- "ftp://185.27.134.11//htdocs/ozone/"
+uploadFileName <- "2020_Draft_Ozone_Values"
+
+ftpUpload(htmlFileName,
+          paste0(uploadSite,uploadFileName,".html"),
+          verbose = TRUE,
+          userpwd = paste0(login,":",secret))
+
+
+
+```
+
+         
+
+
+
+
+
