@@ -39,8 +39,8 @@ month_vector <- str_pad(1:Days_in_month_to_analyze, pad = 0, width = 2, "left")
 aqi_all <- data.frame()
 for (i in month_vector) {
   API_query <- GET(paste0("http://www.airnowapi.org/aq/forecast/zipCode/?zipCode=19806&API_KEY=",
-                          "428E6635-36C1-4DA8-A90A-ED982938204A", #SHANE API KEY
-                          #"0269BB74-0C96-4CA8-A479-9FDA840A7A5E", #MARK API KEY
+                          #"428E6635-36C1-4DA8-A90A-ED982938204A", #SHANE API KEY
+                          "0269BB74-0C96-4CA8-A479-9FDA840A7A5E", #MARK API KEY
                           "&date=2020-08-",
                             as.character(i),
                              "&format=application/json"))
@@ -70,8 +70,8 @@ get_url <- paste0("http://www.airnowapi.org/aq/data/?startDate=",
   as.character(Month_to_analyze), "T00&endDate=",
   as.character(Month_to_analyze_end), "T23&parameters=OZONE&verbose=1&BBOX=-75.83862,38.44498,-74.98992,39.84017&dataType=B&",
   "format=application/json&verbose=0&nowcastonly=0&includerawconcentrations=1&API_KEY=",
-  "428E6635-36C1-4DA8-A90A-ED982938204A") #SHANE API KEY
-  #"0269BB74-0C96-4CA8-A479-9FDA840A7A5E") #MARK API KEY
+  #"428E6635-36C1-4DA8-A90A-ED982938204A") #SHANE API KEY
+  "0269BB74-0C96-4CA8-A479-9FDA840A7A5E") #MARK API KEY
 
 
 #API Call
